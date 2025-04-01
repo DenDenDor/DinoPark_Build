@@ -18,50 +18,121 @@
   
   <script src="Build/brotli-check.js"></script>
   
-  <script src="Build/66df5feacbd1e118b87e77c0c3802431.loader.js"></script>
+  <script src="Build/40547bd12cb3b1a5e685f47d0008e76f.loader.js"></script>
   <script>
+    // Глобальные переменные для работы с Unity
+    let unityInstance = null;
+    
     // Инициализация Telegram WebApp
-    if (typeof Telegram !== 'undefined') {
-      Telegram.WebApp.ready();
-      console.log('Telegram WebApp initialized');
-      console.log('User data:', Telegram.WebApp.initDataUnsafe);
-    } else {
+    function initializeTelegram() {
+      if (typeof Telegram !== 'undefined') {
+        Telegram.WebApp.ready();
+        console.log('Telegram WebApp initialized');
+        console.log('User data:', Telegram.WebApp.initDataUnsafe);
+        
+        // Расширяем WebApp на весь экран
+        Telegram.WebApp.expand();
+        
+        return true;
+      }
       console.warn('Telegram WebApp not detected - running in standalone mode');
+      return false;
     }
 
+    // Функция для API запросов с обработкой CORS
+    function fetchApiData(url, authToken, callback) {
+      fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': 'Bearer ' + authToken,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        mode: 'cors'
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        if (unityInstance && callback) {
+          unityInstance.SendMessage('TelegramBridge', callback, JSON.stringify(data));
+        }
+      })
+      .catch(error => {
+        console.error('API Error:', error);
+        if (unityInstance) {
+          unityInstance.SendMessage(
+            'TelegramBridge', 
+            'OnApiError', 
+            JSON.stringify({error: error.message})
+          );
+        }
+      });
+    }
+
+    // Инициализация Unity
     const settings = {
-      dataUrl: "Build/b66bff6a827b57689955a0579675db08.data",
-      frameworkUrl: "Build/b510a1ac46e3f9e8a1f677eabebf6744.framework.js",
-      codeUrl: "Build/31e33f47773dea12c8f0cdfe87a26db3.wasm",
+      dataUrl: "Build/2d1e71e4ed8a4a47df332055871b2899.data",
+      frameworkUrl: "Build/5f0f52b7146db3695beaa6bcafaa6d87.framework.js",
+      codeUrl: "Build/59ea51accd0012b3eb2271a77f3084a5.wasm",
       streamingAssetsUrl: "StreamingAssets",
       companyName: "DefaultCompany",
       productName: "DinoPark",
-      productVersion: "0.0.101",
+      productVersion: "0.0.102",
       matchWebGLToCanvasSize: true,
-      // devicePixelRatio: 2, // Uncomment this line to enable anti-aliasing
     };
 
     const progressBar = document.querySelector("#progress-bar");
 
+    // Задержка для инициализации
     setTimeout(() => {
       createUnityInstance(document.querySelector("#unity-canvas"), settings, (progress) => {
         progressBar.style.right = 100 * (1 - progress) + "%";
-      }).then((unityInstance) => {
+      }).then((instance) => {
+        unityInstance = instance;
         progressBar.style.display = "none";
         
-        // Передаём данные Telegram в Unity
-        if (typeof Telegram !== 'undefined') {
+        // Инициализируем Telegram
+        const isTelegram = initializeTelegram();
+        
+        // Передаем данные в Unity
+        if (isTelegram && Telegram.WebApp.initData) {
           try {
-            const initData = Telegram.WebApp.initData || {};
-            unityInstance.SendMessage('TelegramBridge', 'SetTelegramData', JSON.stringify(initData));
+            const initData = {
+              user: Telegram.WebApp.initDataUnsafe.user || {},
+              hash: getHashFromInitData(Telegram.WebApp.initData),
+              auth_date: Telegram.WebApp.initDataUnsafe.auth_date
+            };
+            unityInstance.SendMessage(
+              'TelegramBridge', 
+              'SetTelegramData', 
+              JSON.stringify(initData)
+            );
           } catch (e) {
-            console.error('Error sending Telegram data to Unity:', e);
+            console.error('Error sending Telegram data:', e);
           }
         }
       }).catch((message) => {
-        alert(message);
+        alert("Initialization failed: " + message);
       });
     }, 500);
+
+    // Вспомогательная функция для извлечения hash
+    function getHashFromInitData(initData) {
+      const params = new URLSearchParams(initData);
+      return params.get('hash') || '';
+    }
+
+    // Глобально доступные функции для JSLIB
+    window.UnityBridge = {
+      fetchApiData: fetchApiData,
+      getTelegramInitData: () => {
+        return Telegram?.WebApp?.initData || '';
+      }
+    };
   </script>
 </body>
 
